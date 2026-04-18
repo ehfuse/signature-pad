@@ -1,0 +1,57 @@
+{
+    "name": "@ehfuse/signature-pad",
+    "version": "0.1.2",
+    "description": "Reusable React signature pad component",
+    "private": false,
+    "main": "dist/index.js",
+    "module": "dist/index.mjs",
+    "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.mjs",
+            "require": "./dist/index.js"
+        }
+    },
+    "files": [
+        "dist"
+    ],
+    "sideEffects": false,
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "build": "node build.mjs",
+        "build:types": "tsc --emitDeclarationOnly",
+        "prepublishOnly": "npm run build"
+    },
+    "keywords": [
+        "react",
+        "signature",
+        "signature-pad",
+        "canvas",
+        "typescript"
+    ],
+    "author": "김영진 (Kim Young Jin) <ehfuse@gmail.com>",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/ehfuse/signature-pad.git"
+    },
+    "homepage": "https://github.com/ehfuse/signature-pad#readme",
+    "bugs": {
+        "url": "https://github.com/ehfuse/signature-pad/issues"
+    },
+    "peerDependencies": {
+        "react": "^18.0.0 || ^19.0.0",
+        "react-dom": "^18.0.0 || ^19.0.0"
+    },
+    "devDependencies": {
+        "@types/react": "^19.2.7",
+        "@types/react-dom": "^19.2.3",
+        "esbuild": "^0.27.0",
+        "react": "^19.2.0",
+        "react-dom": "^19.2.0",
+        "typescript": "^5.9.3"
+    }
+}

@@ -1,0 +1,21 @@
+# Source files
+src/
+example/
+
+# Config files
+tsconfig.json
+build.mjs
+.gitignore
+.git/
+
+# IDE
+.idea/
+.vscode/
+
+# Development
+node_modules/
+*.log
+.DS_Store
+
+# Misc
+*.tgz
