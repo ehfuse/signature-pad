@@ -8,7 +8,6 @@
             "DOM.Iterable"
         ],
         "module": "ESNext",
-        "baseUrl": ".",
         "paths": {
             "@ehfuse/signature-pad": [
                 "../src"
