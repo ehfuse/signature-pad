@@ -1,6 +1,18 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
 import type { SignaturePoint } from "../types";
 
+interface SignatureInkBounds {
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+}
+
+const SIGNATURE_INK_ALPHA_THRESHOLD = 16;
+const SIGNATURE_INK_LUMINANCE_THRESHOLD = 245;
+const SIGNATURE_CROP_PADDING_RATIO = 0.18;
+const SIGNATURE_CROP_BLEED_PX = 2;
+
 /** 캔버스에 선 스타일을 적용한다. */
 export function applyCanvasStyle(
     context: CanvasRenderingContext2D,
@@ -13,6 +25,165 @@ export function applyCanvasStyle(
     context.lineJoin = "round";
     context.imageSmoothingEnabled = true;
     context.imageSmoothingQuality = "high";
+}
+
+/** RGB 픽셀의 상대 밝기를 계산한다. */
+function getPixelLuminance(red: number, green: number, blue: number) {
+    return red * 0.299 + green * 0.587 + blue * 0.114;
+}
+
+/** 캔버스 픽셀 데이터에서 서명 잉크 영역을 찾는다. */
+function findSignatureInkBounds(
+    imageData: ImageData,
+): SignatureInkBounds | null {
+    const { width, height, data } = imageData;
+    let minX = width;
+    let minY = height;
+    let maxX = -1;
+    let maxY = -1;
+
+    for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+            const index = (y * width + x) * 4;
+            const alpha = data[index + 3] ?? 0;
+            if (alpha <= SIGNATURE_INK_ALPHA_THRESHOLD) continue;
+
+            const luminance = getPixelLuminance(
+                data[index] ?? 255,
+                data[index + 1] ?? 255,
+                data[index + 2] ?? 255,
+            );
+            if (luminance > SIGNATURE_INK_LUMINANCE_THRESHOLD) continue;
+
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x);
+            maxY = Math.max(maxY, y);
+        }
+    }
+
+    return maxX >= minX && maxY >= minY ? { minX, minY, maxX, maxY } : null;
+}
+
+/** 캔버스 픽셀을 흰 배경 위에 합성해 복사한다. */
+function drawSignaturePixel(
+    source: ImageData,
+    target: ImageData,
+    sourceX: number,
+    sourceY: number,
+    targetX: number,
+    targetY: number,
+) {
+    if (
+        targetX < 0 ||
+        targetY < 0 ||
+        targetX >= target.width ||
+        targetY >= target.height
+    )
+        return;
+
+    const sourceIndex = (source.width * sourceY + sourceX) * 4;
+    const targetIndex = (target.width * targetY + targetX) * 4;
+    const alpha = (source.data[sourceIndex + 3] ?? 0) / 255;
+    if (alpha <= 0) return;
+
+    target.data[targetIndex] = Math.round(
+        (source.data[sourceIndex] ?? 0) * alpha + 255 * (1 - alpha),
+    );
+    target.data[targetIndex + 1] = Math.round(
+        (source.data[sourceIndex + 1] ?? 0) * alpha + 255 * (1 - alpha),
+    );
+    target.data[targetIndex + 2] = Math.round(
+        (source.data[sourceIndex + 2] ?? 0) * alpha + 255 * (1 - alpha),
+    );
+    target.data[targetIndex + 3] = 255;
+}
+
+/** 현재 서명 캔버스를 잉크 bbox 기준 crop 캔버스로 만든다. */
+export function createCroppedSignatureCanvas(
+    canvas: HTMLCanvasElement,
+): HTMLCanvasElement | null {
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context || canvas.width <= 0 || canvas.height <= 0) return null;
+
+    const sourceImageData = context.getImageData(
+        0,
+        0,
+        canvas.width,
+        canvas.height,
+    );
+    const bounds = findSignatureInkBounds(sourceImageData);
+    if (!bounds) return null;
+
+    const inkWidth = Math.max(1, bounds.maxX - bounds.minX + 1);
+    const inkHeight = Math.max(1, bounds.maxY - bounds.minY + 1);
+    const padding = Math.max(
+        1,
+        Math.round(
+            Math.max(inkWidth, inkHeight) * SIGNATURE_CROP_PADDING_RATIO,
+        ),
+    );
+    const bleed = Math.min(SIGNATURE_CROP_BLEED_PX, padding);
+    const cropMinX = Math.max(0, bounds.minX - bleed);
+    const cropMinY = Math.max(0, bounds.minY - bleed);
+    const cropMaxX = Math.min(canvas.width - 1, bounds.maxX + bleed);
+    const cropMaxY = Math.min(canvas.height - 1, bounds.maxY + bleed);
+    const outputCanvas = document.createElement("canvas");
+    outputCanvas.width = inkWidth + padding * 2;
+    outputCanvas.height = inkHeight + padding * 2;
+    const outputContext = outputCanvas.getContext("2d");
+    if (!outputContext) return null;
+
+    const outputImageData = outputContext.createImageData(
+        outputCanvas.width,
+        outputCanvas.height,
+    );
+    for (let index = 0; index < outputImageData.data.length; index += 4) {
+        outputImageData.data[index] = 255;
+        outputImageData.data[index + 1] = 255;
+        outputImageData.data[index + 2] = 255;
+        outputImageData.data[index + 3] = 255;
+    }
+
+    for (let sourceY = cropMinY; sourceY <= cropMaxY; sourceY += 1) {
+        for (let sourceX = cropMinX; sourceX <= cropMaxX; sourceX += 1) {
+            drawSignaturePixel(
+                sourceImageData,
+                outputImageData,
+                sourceX,
+                sourceY,
+                padding - (bounds.minX - cropMinX) + (sourceX - cropMinX),
+                padding - (bounds.minY - cropMinY) + (sourceY - cropMinY),
+            );
+        }
+    }
+
+    outputContext.putImageData(outputImageData, 0, 0);
+    return outputCanvas;
+}
+
+/** 현재 서명 캔버스를 crop된 data URL로 내보낸다. */
+export function exportCroppedSignatureDataUrl(
+    canvas: HTMLCanvasElement,
+    type = "image/png",
+    quality?: number,
+) {
+    return (
+        createCroppedSignatureCanvas(canvas)?.toDataURL(type, quality) ??
+        canvas.toDataURL(type, quality)
+    );
+}
+
+/** 현재 서명 캔버스를 crop된 Blob으로 내보낸다. */
+export function exportCroppedSignatureBlob(
+    canvas: HTMLCanvasElement,
+    type = "image/png",
+    quality?: number,
+) {
+    const exportCanvas = createCroppedSignatureCanvas(canvas) ?? canvas;
+    return new Promise<Blob | null>((resolve) => {
+        exportCanvas.toBlob((blob) => resolve(blob), type, quality);
+    });
 }
 
 /** 현재 선 굵기를 반영한다. */

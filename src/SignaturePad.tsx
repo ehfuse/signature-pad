@@ -16,6 +16,8 @@ import { encryptSignatureBlob } from "./internal/crypto";
 import {
     drawSmoothSegment,
     drawTapDot,
+    exportCroppedSignatureBlob,
+    exportCroppedSignatureDataUrl,
     getCanvasPoint,
     getMidPoint,
     getPointDistance,
@@ -89,7 +91,7 @@ function SignaturePadInner(
             return;
         }
 
-        onChange?.(canvas.toDataURL("image/png"));
+        onChange?.(exportCroppedSignatureDataUrl(canvas, "image/png"));
     };
 
     /** 캔버스를 초기 상태로 되돌린다. */
@@ -126,9 +128,7 @@ function SignaturePadInner(
             return Promise.resolve<Blob | null>(null);
         }
 
-        return new Promise<Blob | null>((resolve) => {
-            canvas.toBlob((blob) => resolve(blob), type, quality);
-        });
+        return exportCroppedSignatureBlob(canvas, type, quality);
     };
 
     useImperativeHandle(
@@ -142,7 +142,7 @@ function SignaturePadInner(
                     return null;
                 }
 
-                return canvas.toDataURL(type, quality);
+                return exportCroppedSignatureDataUrl(canvas, type, quality);
             },
             toBlob: (type = "image/png", quality) => {
                 return exportCurrentBlob(type, quality);
